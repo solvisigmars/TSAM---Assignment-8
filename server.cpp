@@ -80,6 +80,15 @@ struct Message
 };
 // Maps the users to a vector containing all of their messages.
 std::map<std::string, std::vector<Message>> messages;
+
+struct Server
+{
+  std::string ip;
+  int port;
+};
+// Maps each server's group id to its IP address and port
+std::map<std::string, Server> knownServers;
+
 // Open socket for specified port.
 //
 // Returns -1 if unable to create the socket for any reason.
@@ -222,7 +231,7 @@ void closeClient(int clientSocket, std::vector<struct pollfd> *fds)
 //
 // Returns false if the client has gone away.
 
-bool sendResponse(int clientSocket, const std::string &response)
+bool sendMessage(int clientSocket, const std::string &response)
 {
 
     uint16_t frameLength = response.size() + 5;
@@ -292,13 +301,16 @@ void logMessage(const std::string &message)
 // Process command from client on the server
 void clientCommand(int clientSocket, const std::string &command)
 {
+  // Search the client map for the socket that sent the command
    auto it = clients.find(clientSocket);
 
+   // If the socket is not found return
     if (it == clients.end())
     {
         return;
     }
 
+    // Get the client object connected to the socket 
     Client* c = it->second;
     // If the command is STATUSREQ the user gets sent back a response with a list of every users that has at leas one message
     if (command == "STATUSREQ")
@@ -334,7 +346,7 @@ void clientCommand(int clientSocket, const std::string &command)
                 }
             }
         }
-        sendResponse(clientSocket, response);
+        sendMessage(clientSocket, response);
     }
     // We have to process the message that was sent.
     // 1. Extract the sender's username
@@ -353,7 +365,7 @@ void clientCommand(int clientSocket, const std::string &command)
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                         command.data(), command.size());
 
-        sendResponse(clientSocket, "Invalid SENDMSG format");
+        sendMessage(clientSocket, "Invalid SENDMSG format");
         return;
     }
         
@@ -367,7 +379,7 @@ void clientCommand(int clientSocket, const std::string &command)
             log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                             command.data(), command.size());
 
-            sendResponse(clientSocket, "Invalid SENDMSG format");
+            sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
         std::string to = command.substr(comma + 1, secondComma - (comma + 1));
@@ -380,7 +392,7 @@ void clientCommand(int clientSocket, const std::string &command)
         {
             log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                         command.data(), command.size());
-            sendResponse(clientSocket, "Invalid SENDMSG format");
+            sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
 
@@ -392,7 +404,7 @@ void clientCommand(int clientSocket, const std::string &command)
                     command.data(), command.size());
 
         std::string response = "Message received";
-        sendResponse(clientSocket, response);
+        sendMessage(clientSocket, response);
     }
 
     // Extract the first message in the recipent's queue
@@ -413,7 +425,7 @@ void clientCommand(int clientSocket, const std::string &command)
             log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                             command.data(), command.size());
 
-            sendResponse(clientSocket, "Invalid GETMSG format");
+            sendMessage(clientSocket, "Invalid GETMSG format");
             return;
         }
 
@@ -431,8 +443,9 @@ void clientCommand(int clientSocket, const std::string &command)
         if (foundUser == messages.end())
         {
             response += "User not found";
-            sendResponse(clientSocket, response);
+            sendMessage(clientSocket, response);
         }
+
 
         // Else find the first message for the user
         else
@@ -447,7 +460,7 @@ void clientCommand(int clientSocket, const std::string &command)
             response += firstMessage.from;
             response += ", ";
             response += firstMessage.message;
-            if (sendResponse(clientSocket, response))
+            if (sendMessage(clientSocket, response))
             {
                 // Delete the message from the user storage
                 foundUser->second.erase(foundUser->second.begin()); // Remove the first message from the vector
@@ -461,12 +474,33 @@ void clientCommand(int clientSocket, const std::string &command)
             }
         }
     }
+    else if(command.starts_with("HELO,"))
+    {
+      // Extract the group ID from the HELO command
+      std::string groupId = command.substr(5);
+
+      // Check if the group ID is empty
+      if (groupId.empty())
+      {
+        // Log the invalid command as DROP
+        log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
+                            command.data(), command.size());
+        return;
+      }
+      // Save the other server's group ID in its Client object
+      c->name = groupId;
+
+      // Log the successfully received HELO command
+      log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.c_str(),
+                command.data(), command.size());
+    }
+
     else
     {
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                     command.data(), command.size());
                     
-        sendResponse(clientSocket, "Unknown command");
+        sendMessage(clientSocket, "Unknown command");
     }
 }
 
@@ -514,6 +548,7 @@ int main(int argc, char *argv[])
 
         if (peerSock >= 0)
         {
+          std::string message;
           // Add peer spcket to the list of fds being polled
           fds.push_back({peerSock, POLLIN, 0});
           printf("Connected to server\n");
@@ -522,6 +557,11 @@ int main(int argc, char *argv[])
 
           clients[peerSock] ->ip = "130.208.246.98"; // Stores the ip address
           clients[peerSock]->port = 5001; // Stores the port number
+
+          // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
+          message += "HELO,";
+          message += GROUP_ID;
+          sendMessage(peerSock, message);
 
           log_event("CONN", "130.208.246.98", 5001, NULL,
               "outgoing connection established");
