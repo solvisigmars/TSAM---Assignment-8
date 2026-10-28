@@ -292,13 +292,16 @@ void logMessage(const std::string &message)
 // Process command from client on the server
 void clientCommand(int clientSocket, const std::string &command)
 {
+  // Search the client map for the socket that sent the command
    auto it = clients.find(clientSocket);
 
+   // If the socket is not found return
     if (it == clients.end())
     {
         return;
     }
 
+    // Get the client object connected to the socket 
     Client* c = it->second;
     // If the command is STATUSREQ the user gets sent back a response with a list of every users that has at leas one message
     if (command == "STATUSREQ")
@@ -464,15 +467,23 @@ void clientCommand(int clientSocket, const std::string &command)
     }
     else if(command.starts_with("HELO,"))
     {
-      std::string userId = command.substr(5);
+      // Extract the group ID from the HELO command
+      std::string groupId = command.substr(5);
 
-      if (userId.empty())
+      // Check if the group ID is empty
+      if (groupId.empty())
       {
+        // Log the invalid command as DROP
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                             command.data(), command.size());
         return;
       }
-      
+      // Save the other server's group ID in its Client object
+      c->name = groupId;
+
+      // Log the successfully received HELO command
+      log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.c_str(),
+                command.data(), command.size());
     }
 
     else
