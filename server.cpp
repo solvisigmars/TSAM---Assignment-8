@@ -154,7 +154,7 @@ int connectToServer(const char* ip, int port)
   serverAddr.sin_port = htons(port); // Store the port number and covnert port number from host binary order to network binary order
   
   // Check if it is a valid IP address
-  if (inet_pton(AF_INET, ip, &serverAddr.sin_addr) != 1) ; // Converts the IP addres from text to binary
+  if (inet_pton(AF_INET, ip, &serverAddr.sin_addr) != 1) // Converts the IP addres from text to binary
   {
     printf("Invalid IP address\n");
     close(sock); // Close the socket since it failed and we won't need it 
@@ -492,7 +492,6 @@ int main(int argc, char *argv[])
     }
 
     // Setup socket for server to listen to
-
     listenSock = open_socket(atoi(argv[1]));
     printf("Listening on port: %d\n", atoi(argv[1]));
 
@@ -508,6 +507,31 @@ int main(int argc, char *argv[])
 
         // Log the server that has started
         log_event("START", NULL, 0, GROUP_ID, "Server started");
+
+
+        // Connect to the server to join the botnet
+        int peerSock = connectToServer("130.208.246.98", 5001);
+
+        if (peerSock >= 0)
+        {
+          // Add peer spcket to the list of fds being polled
+          fds.push_back({peerSock, POLLIN, 0});
+          printf("Connected to server\n");
+
+          clients[peerSock] = new Client(peerSock); // Creates a Client object for the outgoing connection
+
+          clients[peerSock] ->ip = "130.208.246.98"; // Stores the ip address
+          clients[peerSock]->port = 5001; // Stores the port number
+
+          log_event("CONN", "130.208.246.98", 5001, NULL,
+              "outgoing connection established");
+        }
+        else
+        {
+          printf("Connection failed");
+          log_note("Could not connect to initial server");
+
+        }
     }
 
     finished = false;
@@ -587,7 +611,7 @@ int main(int argc, char *argv[])
                     int bytesReceived = recv(sock, buffer, sizeof(buffer), MSG_DONTWAIT);
                     if (bytesReceived == 0)
                     {
-                        disconnectedClients.push_back(client);
+                       // disconnectedClients.push_back(client);
                         closeClient(sock, &fds);
                         continue;
                     }
