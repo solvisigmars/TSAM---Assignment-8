@@ -135,10 +135,14 @@ int open_socket(int portno)
     }
 }
 
+// connectToServer creates an outggoing connection to another server.
+// Retunrns the connected socket or -1 if it failed.
 int connectToServer(const char* ip, int port)
 {
-  // 1. Create a TCP socket
+  struct sockaddr_in serverAddr{};
   int sock;
+  // 1. Create a TCP socket
+  
   if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
   {
     perror("Failed to open socket");
@@ -146,10 +150,26 @@ int connectToServer(const char* ip, int port)
   }
 
   // 2. Prepare the destination address
-
+  serverAddr.sin_family = AF_INET;  // IPv4 address 
+  serverAddr.sin_port = htons(port); // Store the port number and covnert port number from host binary order to network binary order
+  
+  // Check if it is a valid IP address
+  if (inet_pton(AF_INET, ip, &serverAddr.sin_addr) != 1) ; // Converts the IP addres from text to binary
+  {
+    printf("Invalid IP address\n");
+    close(sock); // Close the socket since it failed and we won't need it 
+    return -1;
+  }
   // 3. Connect to the destination server
+  if (connect(sock, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
+    {
+        perror("Conncetion Failed");
+        close(sock); // Close the socket since it failed and we won't need it 
+        return -1;
+    }
 
   // 4. Return the connected socket
+  return sock;
 }
 
 // Close a client's connection, and remove it from the list of file
