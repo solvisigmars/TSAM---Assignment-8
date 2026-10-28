@@ -1,0 +1,5 @@
+tsamserver
+tsamclient
+*.o
+*.log
+.DS_Store
