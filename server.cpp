@@ -558,13 +558,15 @@ int main(int argc, char *argv[])
           clients[peerSock] ->ip = "130.208.246.98"; // Stores the ip address
           clients[peerSock]->port = 5001; // Stores the port number
 
+
+          log_event("CONN", "130.208.246.98", 5001, NULL,
+              "outgoing connection established");
+
           // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
           message += "HELO,";
           message += GROUP_ID;
           sendMessage(peerSock, message);
 
-          log_event("CONN", "130.208.246.98", 5001, NULL,
-              "outgoing connection established");
         }
         else
         {
@@ -612,29 +614,36 @@ int main(int argc, char *argv[])
 
                 else
                 {
-                    printf("accept***\n");
-                    // Add new client to the list of fds being polled
-                    fds.push_back({clientSock, POLLIN, 0});
+                  std::string message;
 
-                    // create a new client to store information.
-                    // Re-use the record for this socket if we have seen it
-                    // before, so we don't leak a Client every time someone
-                    // disconnects and reconnects.
-                    if (clients.find(clientSock) == clients.end())
-                    {
-                        clients[clientSock] = new Client(clientSock);
-                    }
+                  printf("accept***\n");
+                  // Add new client to the list of fds being polled
+                  fds.push_back({clientSock, POLLIN, 0});
 
-                    // Get the clients ip address and port 
-                    const char* ip = inet_ntoa(client.sin_addr);
-                    int port = ntohs(client.sin_port);
+                  // create a new client to store information.
+                  // Re-use the record for this socket if we have seen it
+                  // before, so we don't leak a Client every time someone
+                  // disconnects and reconnects.
+                  if (clients.find(clientSock) == clients.end())
+                  {
+                      clients[clientSock] = new Client(clientSock);
+                  }
 
-                    // Save IP and port in the Client object
-                    clients[clientSock]->ip = ip;
-                    clients[clientSock]->port = port;
+                  // Get the clients ip address and port 
+                  const char* ip = inet_ntoa(client.sin_addr);
+                  int port = ntohs(client.sin_port);
 
-                    printf("Client connected on server: %d\n", clientSock);
-                    log_event("ACCEPT", ip, port, NULL, "Client connected");
+                  // Save IP and port in the Client object
+                  clients[clientSock]->ip = ip;
+                  clients[clientSock]->port = port;
+
+                  printf("Client connected on server: %d\n", clientSock);
+                  log_event("ACCEPT", ip, port, NULL, "Client connected");
+
+                  // Send HELO when a server connect to this server
+                  message += "HELO,";
+                  message += GROUP_ID;
+                  sendMessage(clientSock, message);
                 }
             }
             // Now check for commands from clients
