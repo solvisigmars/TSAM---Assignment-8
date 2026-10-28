@@ -80,6 +80,15 @@ struct Message
 };
 // Maps the users to a vector containing all of their messages.
 std::map<std::string, std::vector<Message>> messages;
+
+struct Server
+{
+  std::string ip;
+  int port;
+};
+// Maps each server's group id to its IP address and port
+std::map<std::string, Server> knownServers;
+
 // Open socket for specified port.
 //
 // Returns -1 if unable to create the socket for any reason.
