@@ -495,6 +495,37 @@ void clientCommand(int clientSocket, const std::string &command)
                 command.data(), command.size());
     }
 
+    else if(command.starts_with("SERVERS,"))
+    {
+
+      std::string serverList = command.substr(8);
+
+      // lets us move through the string one by one
+      std::stringstream ss(serverList);
+      std::string entry;
+
+      log_event_bytes("RECV", c->ip.c_str(), c->port,
+                c->name.c_str(),
+                command.data(), command.size());
+                
+      // Split each entry by the ;
+      while (std::getline(ss, entry, ';'))
+      {
+        std::stringstream serverStream(entry);
+
+        std::string groupId;
+        std::string ip;
+        std::string port;
+        // Gets each detail by splitting it on the comma
+        std::getline(serverStream, groupId, ',');
+        std::getline(serverStream, ip, ',');
+        std::getline(serverStream, port, ',');
+
+        knownServers[groupId] = {ip, std::stoi(port)}; // Store the server in the knownServer map
+        std::cout << groupId << " " << ip << " " << port << std::endl;
+      }
+    }
+
     else
     {
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
@@ -502,6 +533,8 @@ void clientCommand(int clientSocket, const std::string &command)
                     
         sendMessage(clientSocket, "Unknown command");
     }
+
+    
 }
 
 int main(int argc, char *argv[])
