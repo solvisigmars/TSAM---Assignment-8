@@ -38,6 +38,8 @@
 #include "identity.h"
 #include "log_event.h"
 
+#include <arpa/inet.h>
+
 #include <unistd.h>
 
 #include <cerrno>
@@ -131,6 +133,23 @@ int open_socket(int portno)
     {
         return (sock); // -1 means wait indefinitely until something happens
     }
+}
+
+int connectToServer(const char* ip, int port)
+{
+  // 1. Create a TCP socket
+  int sock;
+  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+  {
+    perror("Failed to open socket");
+    return (-1);
+  }
+
+  // 2. Prepare the destination address
+
+  // 3. Connect to the destination server
+
+  // 4. Return the connected socket
 }
 
 // Close a client's connection, and remove it from the list of file
