@@ -61,7 +61,7 @@ public:
     int sock;                                 // socket of client connection
     std::string name;                         // Limit length of name of client's user
     std::string ip;                           // Client's IP address
-    int port = 0;                             // Client's port number
+    int port = 0;                              // Client's port number
     std::vector<unsigned char> receiveBuffer; // Create a receive buffer so that if TCP doesn´t send the whole frame at once.
                                               // We can store the data in the buffer and wait for the rest of it to come
 
@@ -171,7 +171,6 @@ bool connectToPeer(const std::string& ip, int port,
   clients[peerSock] ->ip = ip; // Stores the ip address
   clients[peerSock]->port = port; // Stores the port number
 
-
   log_event("CONN", ip.c_str(), port, NULL,
       "outgoing connection established");
 
@@ -228,6 +227,15 @@ int connectToServer(const char* ip, int port)
 // Connect to the servers that we know about
 void connectToKnownServers(std::vector<struct pollfd>& fds)
 {
+  int connectionCount = 0;
+
+  for (const auto& [sock, client] : clients){
+    if (!client->name.empty())
+    {
+      connectionCount ++;
+    }
+  }
+
   for(const auto& [groupId, server] : knownServers)
   {
     bool connected = false;
@@ -241,7 +249,7 @@ void connectToKnownServers(std::vector<struct pollfd>& fds)
     // Servers that are connected are stored in the Client
     for(const auto& [sock, client] : clients)
     {
-      if (client->name == groupId)
+      if (client->name == groupId ||(client->ip == server.ip && client->port == server.port))
       {
         connected = true;
         break;
@@ -253,9 +261,17 @@ void connectToKnownServers(std::vector<struct pollfd>& fds)
       continue;
     }
 
+    // If we have reached 5 connected servers we stop connecting to more
+    if (connectionCount >= 5){
+      break;
+    }
+
     // Extract the ip from the server and port 
     // Use that to connect to the server
-    connectToPeer(server.ip, server.port, fds);
+    if (connectToPeer(server.ip, server.port, fds))
+    {
+      connectionCount ++;
+    }
   }
 }
 
