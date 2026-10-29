@@ -95,6 +95,9 @@ std::map<std::string, Server> knownServers;
 
 // Function declaration
 void logMessage(const std::string &message);
+int connectToServer(const char* ip, int port);
+bool sendMessage(int clientSocket, const std::string& response);
+void closeClient(int clientSocket, std::vector<struct pollfd> *fds);
 
 int open_socket(int portno)
 {
@@ -143,7 +146,10 @@ int open_socket(int portno)
         return (sock); // -1 means wait indefinitely until something happens
     }
 }
-
+// Connect to peer servers
+// It connects to the server
+// Saves the server information
+// Send HELO to the server after connection
 bool connectToPeer(const std::string& ip, int port,
                    std::vector<struct pollfd>& fds)
 {
@@ -155,7 +161,6 @@ bool connectToPeer(const std::string& ip, int port,
     return false;
   }
 
- 
   std::string message;
   // Add peer spcket to the list of fds being polled
   fds.push_back({peerSock, POLLIN, 0});
@@ -174,14 +179,13 @@ bool connectToPeer(const std::string& ip, int port,
   message += "HELO,";
   message += GROUP_ID;
 
-  if (!sendMessage(peerSock, message));
+  if (!sendMessage(peerSock, message))
   {
     closeClient(peerSock, &fds);
     return false;
   }
-  
+
   return true;
-  
 }
 
 // connectToServer creates an outgoing connection to another server.
@@ -219,6 +223,40 @@ int connectToServer(const char* ip, int port)
 
   // 4. Return the connected socket
   return sock;
+}
+
+// Connect to the servers that we know about
+void connectToKnownServers(std::vector<struct pollfd>& fds)
+{
+  for(const auto& [groupId, server] : knownServers)
+  {
+    bool connected = false;
+
+    // Skip our server
+    if (groupId == GROUP_ID){
+      continue;
+    }
+
+    // Check if we are connected to the server
+    // Servers that are connected are stored in the Client
+    for(const auto& [sock, client] : clients)
+    {
+      if (client->name == groupId)
+      {
+        connected = true;
+        break;
+      }
+    }
+    // Skip server if it is connected
+    if(connected)
+    {
+      continue;
+    }
+
+    // Extract the ip from the server and port 
+    // Use that to connect to the server
+    connectToPeer(server.ip, server.port, fds);
+  }
 }
 
 // Close a client's connection, and remove it from the list of file
@@ -358,7 +396,7 @@ std::string serversMessage()
 }
 
 // Process command from client on the server
-void clientCommand(int clientSocket, const std::string &command)
+void clientCommand(int clientSocket, const std::string &command, std::vector<struct pollfd>& fds)
 {
   // Search the client map for the socket that sent the command
    auto it = clients.find(clientSocket);
@@ -430,7 +468,7 @@ void clientCommand(int clientSocket, const std::string &command)
         
         std::string from = command.substr(8, comma - 8); // Find the from person. It starts at index 8 and stops at the next comma.
 
-        // Find the to
+        // Find the second comma
         size_t secondComma = command.find(",", comma + 1);
 
         if (secondComma == std::string::npos)
@@ -800,7 +838,7 @@ int main(int argc, char *argv[])
                                 client->receiveBuffer.begin() + frameLength - 1 // Stop at the end
                             );
 
-                            clientCommand(sock, command);
+                            clientCommand(sock, command, fds);
 
                             // Remove the frame we just processed
                             client->receiveBuffer.erase(
