@@ -638,6 +638,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         std::getline(serverStream, port, ',');
 
         knownServers[groupId] = {ip, std::stoi(port)}; // Store the server in the knownServer map
+        connectToKnownServers(fds);
         std::cout << groupId << " " << ip << " " << port << std::endl;
       }
     }
@@ -647,7 +648,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
                     command.data(), command.size());
                     
-        sendMessage(clientSocket, "Unknown command");
+        // sendMessage(clientSocket, "Unknown command");
     }
 
     
