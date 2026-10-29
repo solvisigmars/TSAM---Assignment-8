@@ -303,7 +303,7 @@ std::string serversMessage()
 {
   // Set my server details at the front of the message 
   std::string ipAddress = "130.208.246.98";
-  int port = 4044;
+  int port = 4045;
   std::string message = "SERVERS,";
   message += std::string(GROUP_ID) + "," + ipAddress + "," + std::to_string(port) + ";";
 
