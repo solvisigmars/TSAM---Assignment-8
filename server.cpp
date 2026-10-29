@@ -783,8 +783,6 @@ int main(int argc, char *argv[])
                   sendMessage(clientSock, message);
                 }
             }
-            // Now check for commands from clients
-            std::list<Client *> disconnectedClients;
 
             for (size_t i = 1; i < readyFds.size(); i++) // Loops through the clients sockets
             {
@@ -818,7 +816,6 @@ int main(int argc, char *argv[])
                             perror("recv failed");
 
                             log_note("Error receiving data from client: %d", sock);
-                            disconnectedClients.push_back(client);
                             closeClient(sock, &fds);
                         }
                         continue;
@@ -887,12 +884,6 @@ int main(int argc, char *argv[])
                         }
                     }
                 }
-            }
-            // Remove client from the clients list
-            for (auto const &c : disconnectedClients)
-            {
-                clients.erase(c->sock);
-                delete c;
             }
         }
     }
