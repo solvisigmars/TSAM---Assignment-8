@@ -208,8 +208,6 @@ void closeClient(int clientSocket, std::vector<struct pollfd> *fds)
       clients.erase(it);
     }
 
-    
-    
 
     close(clientSocket);
 
@@ -299,6 +297,7 @@ void logMessage(const std::string &message)
 }
 
 // Create the servers message
+// Only want to send servers that we are directly connected to
 std::string serversMessage()
 {
   // Set my server details at the front of the message 
@@ -307,13 +306,26 @@ std::string serversMessage()
   std::string message = "SERVERS,";
   message += std::string(GROUP_ID) + "," + ipAddress + "," + std::to_string(port) + ";";
 
-  for (const auto& [groupId, server] : knownServers)
+  // Loop through the clients
+  for (const auto& [sock, client] : clients)
   {
-    message += groupId + ",";
+    if (client->name.empty())
+      continue;
+    
+    if (client->name == GROUP_ID)
+      continue;
+    
+    auto it = knownServers.find(client->name);
+
+    if (it == knownServers.end())
+      continue;
+      
+    const Server& server = it->second;
+    message += client->name + ",";
     message += server.ip + ",";
     message += std::to_string(server.port) + ";";
-    std:: cout << message;
   }
+  std:: cout << message;
   return message;
 }
 
