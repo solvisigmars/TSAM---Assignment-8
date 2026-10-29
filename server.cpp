@@ -144,7 +144,7 @@ int open_socket(int portno)
     }
 }
 
-// connectToServer creates an outggoing connection to another server.
+// connectToServer creates an outgoing connection to another server.
 // Retunrns the connected socket or -1 if it failed.
 int connectToServer(const char* ip, int port)
 {
