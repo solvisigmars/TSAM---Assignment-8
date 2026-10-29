@@ -61,7 +61,7 @@ public:
     int sock;                                 // socket of client connection
     std::string name;                         // Limit length of name of client's user
     std::string ip;                           // Client's IP address
-    int port = 0;                             // Client's port number
+    int port = 0;                              // Client's port number
     std::vector<unsigned char> receiveBuffer; // Create a receive buffer so that if TCP doesn´t send the whole frame at once.
                                               // We can store the data in the buffer and wait for the rest of it to come
 
@@ -95,6 +95,9 @@ std::map<std::string, Server> knownServers;
 
 // Function declaration
 void logMessage(const std::string &message);
+int connectToServer(const char* ip, int port);
+bool sendMessage(int clientSocket, const std::string& response);
+void closeClient(int clientSocket, std::vector<struct pollfd> *fds);
 
 int open_socket(int portno)
 {
@@ -143,6 +146,46 @@ int open_socket(int portno)
         return (sock); // -1 means wait indefinitely until something happens
     }
 }
+// Connect to peer servers
+// It connects to the server
+// Saves the server information
+// Send HELO to the server after connection
+bool connectToPeer(const std::string& ip, int port,
+                   std::vector<struct pollfd>& fds)
+{
+  // Connect to the server to join the botnet
+  int peerSock = connectToServer(ip.c_str(), port);
+
+  if (peerSock < 0)
+  {
+    return false;
+  }
+
+  std::string message;
+  // Add peer spcket to the list of fds being polled
+  fds.push_back({peerSock, POLLIN, 0});
+  printf("Connected to server\n");
+
+  clients[peerSock] = new Client(peerSock); // Creates a Client object for the outgoing connection
+
+  clients[peerSock] ->ip = ip; // Stores the ip address
+  clients[peerSock]->port = port; // Stores the port number
+
+  log_event("CONN", ip.c_str(), port, NULL,
+      "outgoing connection established");
+
+  // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
+  message += "HELO,";
+  message += GROUP_ID;
+
+  if (!sendMessage(peerSock, message))
+  {
+    closeClient(peerSock, &fds);
+    return false;
+  }
+
+  return true;
+}
 
 // connectToServer creates an outgoing connection to another server.
 // Retunrns the connected socket or -1 if it failed.
@@ -179,6 +222,57 @@ int connectToServer(const char* ip, int port)
 
   // 4. Return the connected socket
   return sock;
+}
+
+// Connect to the servers that we know about
+void connectToKnownServers(std::vector<struct pollfd>& fds)
+{
+  int connectionCount = 0;
+
+  for (const auto& [sock, client] : clients){
+    if (!client->name.empty())
+    {
+      connectionCount ++;
+    }
+  }
+
+  for(const auto& [groupId, server] : knownServers)
+  {
+    bool connected = false;
+
+    // Skip our server
+    if (groupId == GROUP_ID){
+      continue;
+    }
+
+    // Check if we are connected to the server
+    // Servers that are connected are stored in the Client
+    for(const auto& [sock, client] : clients)
+    {
+      if (client->name == groupId ||(client->ip == server.ip && client->port == server.port))
+      {
+        connected = true;
+        break;
+      }
+    }
+    // Skip server if it is connected
+    if(connected)
+    {
+      continue;
+    }
+
+    // If we have reached 5 connected servers we stop connecting to more
+    if (connectionCount >= 5){
+      break;
+    }
+
+    // Extract the ip from the server and port 
+    // Use that to connect to the server
+    if (connectToPeer(server.ip, server.port, fds))
+    {
+      connectionCount ++;
+    }
+  }
 }
 
 // Close a client's connection, and remove it from the list of file
@@ -318,7 +412,7 @@ std::string serversMessage()
 }
 
 // Process command from client on the server
-void clientCommand(int clientSocket, const std::string &command)
+void clientCommand(int clientSocket, const std::string &command, std::vector<struct pollfd>& fds)
 {
   // Search the client map for the socket that sent the command
    auto it = clients.find(clientSocket);
@@ -390,7 +484,7 @@ void clientCommand(int clientSocket, const std::string &command)
         
         std::string from = command.substr(8, comma - 8); // Find the from person. It starts at index 8 and stops at the next comma.
 
-        // Find the to
+        // Find the second comma
         size_t secondComma = command.find(",", comma + 1);
 
         if (secondComma == std::string::npos)
@@ -597,37 +691,11 @@ int main(int argc, char *argv[])
         // Log the server that has started
         log_event("START", NULL, 0, GROUP_ID, "Server started");
 
-
-        // Connect to the server to join the botnet
-        int peerSock = connectToServer("130.208.246.98", 5001);
-
-        if (peerSock >= 0)
+        // Connect to a peer server. First it needs to be the inital server to get info for the other servers
+        if (!connectToPeer("130.208.246.98", 5001, fds))
         {
-          std::string message;
-          // Add peer spcket to the list of fds being polled
-          fds.push_back({peerSock, POLLIN, 0});
-          printf("Connected to server\n");
-
-          clients[peerSock] = new Client(peerSock); // Creates a Client object for the outgoing connection
-
-          clients[peerSock] ->ip = "130.208.246.98"; // Stores the ip address
-          clients[peerSock]->port = 5001; // Stores the port number
-
-
-          log_event("CONN", "130.208.246.98", 5001, NULL,
-              "outgoing connection established");
-
-          // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
-          message += "HELO,";
-          message += GROUP_ID;
-          sendMessage(peerSock, message);
-
-        }
-        else
-        {
-          printf("Connection failed");
+          // Log if connection failed
           log_note("Could not connect to initial server");
-
         }
     }
 
@@ -786,7 +854,7 @@ int main(int argc, char *argv[])
                                 client->receiveBuffer.begin() + frameLength - 1 // Stop at the end
                             );
 
-                            clientCommand(sock, command);
+                            clientCommand(sock, command, fds);
 
                             // Remove the frame we just processed
                             client->receiveBuffer.erase(
