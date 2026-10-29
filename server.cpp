@@ -298,6 +298,25 @@ void logMessage(const std::string &message)
     logFile << std::put_time(localTime, "%Y-%m-%d %H:%M:%S") << " " << message << "\n";
 }
 
+// Create the servers message
+std::string serversMessage()
+{
+  // Set my server details at the front of the message 
+  std::string ipAddress = "192.168.11.61";
+  int port = 4044;
+  std::string message = "SERVERS,";
+  message += std::string(GROUP_ID) + "," + ipAddress + "," + std::to_string(port) + ";";
+
+  for (const auto& [groupId, server] : knownServers)
+  {
+    message += groupId + ",";
+    message += server.ip + ",";
+    message += std::to_string(server.port) + ";";
+    std:: cout << message;
+  }
+  return message;
+}
+
 // Process command from client on the server
 void clientCommand(int clientSocket, const std::string &command)
 {
@@ -493,6 +512,9 @@ void clientCommand(int clientSocket, const std::string &command)
       // Log the successfully received HELO command
       log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.c_str(),
                 command.data(), command.size());
+
+      std::string message = serversMessage();
+      sendMessage(clientSocket, message);
     }
 
     else if(command.starts_with("SERVERS,"))
@@ -507,7 +529,7 @@ void clientCommand(int clientSocket, const std::string &command)
       log_event_bytes("RECV", c->ip.c_str(), c->port,
                 c->name.c_str(),
                 command.data(), command.size());
-                
+
       // Split each entry by the ;
       while (std::getline(ss, entry, ';'))
       {
