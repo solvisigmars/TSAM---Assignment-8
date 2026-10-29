@@ -144,6 +144,46 @@ int open_socket(int portno)
     }
 }
 
+bool connectToPeer(const std::string& ip, int port,
+                   std::vector<struct pollfd>& fds)
+{
+  // Connect to the server to join the botnet
+  int peerSock = connectToServer(ip.c_str(), port);
+
+  if (peerSock < 0)
+  {
+    return false;
+  }
+
+ 
+  std::string message;
+  // Add peer spcket to the list of fds being polled
+  fds.push_back({peerSock, POLLIN, 0});
+  printf("Connected to server\n");
+
+  clients[peerSock] = new Client(peerSock); // Creates a Client object for the outgoing connection
+
+  clients[peerSock] ->ip = ip; // Stores the ip address
+  clients[peerSock]->port = port; // Stores the port number
+
+
+  log_event("CONN", ip.c_str(), port, NULL,
+      "outgoing connection established");
+
+  // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
+  message += "HELO,";
+  message += GROUP_ID;
+
+  if (!sendMessage(peerSock, message));
+  {
+    closeClient(peerSock, &fds);
+    return false;
+  }
+  
+  return true;
+  
+}
+
 // connectToServer creates an outgoing connection to another server.
 // Retunrns the connected socket or -1 if it failed.
 int connectToServer(const char* ip, int port)
@@ -597,37 +637,11 @@ int main(int argc, char *argv[])
         // Log the server that has started
         log_event("START", NULL, 0, GROUP_ID, "Server started");
 
-
-        // Connect to the server to join the botnet
-        int peerSock = connectToServer("130.208.246.98", 5001);
-
-        if (peerSock >= 0)
+        // Connect to a peer server. First it needs to be the inital server to get info for the other servers
+        if (!connectToPeer("130.208.246.98", 5001, fds))
         {
-          std::string message;
-          // Add peer spcket to the list of fds being polled
-          fds.push_back({peerSock, POLLIN, 0});
-          printf("Connected to server\n");
-
-          clients[peerSock] = new Client(peerSock); // Creates a Client object for the outgoing connection
-
-          clients[peerSock] ->ip = "130.208.246.98"; // Stores the ip address
-          clients[peerSock]->port = 5001; // Stores the port number
-
-
-          log_event("CONN", "130.208.246.98", 5001, NULL,
-              "outgoing connection established");
-
-          // Send helo HELO,<FROM_GROUP_ID> after connectiong to the server
-          message += "HELO,";
-          message += GROUP_ID;
-          sendMessage(peerSock, message);
-
-        }
-        else
-        {
-          printf("Connection failed");
+          // Log if connection failed
           log_note("Could not connect to initial server");
-
         }
     }
 
