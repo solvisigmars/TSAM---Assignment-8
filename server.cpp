@@ -638,9 +638,10 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         std::getline(serverStream, port, ',');
 
         knownServers[groupId] = {ip, std::stoi(port)}; // Store the server in the knownServer map
-        connectToKnownServers(fds);
         std::cout << groupId << " " << ip << " " << port << std::endl;
       }
+      // All discovered servers have been stored so we try to connect to them
+      connectToKnownServers(fds);
     }
 
     else
