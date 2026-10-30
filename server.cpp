@@ -25,6 +25,8 @@
 #include <list>
 #include <poll.h>
 
+#include <chrono>
+
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -64,8 +66,13 @@ public:
     int port = 0;                              // Client's port number
     std::vector<unsigned char> receiveBuffer; // Create a receive buffer so that if TCP doesn´t send the whole frame at once.
                                               // We can store the data in the buffer and wait for the rest of it to come
+    
+    std::chrono::steady_clock::time_point lastKeepalive;
 
-    Client(int socket) : sock(socket) {}
+    Client(int socket)
+        : sock(socket), 
+        lastKeepalive(std::chrono::steady_clock::now())
+    {}
 
     ~Client() {} // Virtual destructor defined for base class
 };
@@ -675,6 +682,32 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
       connectToKnownServers(fds);
     }
 
+    else if (command.starts_with("KEEPALIVE,"))
+    {
+        std::string countMessages = command.substr(10);
+
+        try
+        {
+            size_t pos = 0;
+            int count = std::stoi(countMessages, &pos);
+
+            // Make sure the entire string was a valid
+            // non-negative integer.
+            if (pos != countMessages.size() || count < 0)
+            {
+                return;
+            }
+
+            // count now tells us how many messages
+            // the other server says it has waiting for us.
+        }
+        catch (const std::exception& e)
+        {
+            // Invalid number: ignore this command.
+            return;
+        }
+    }
+
     else
     {
         log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
@@ -742,8 +775,7 @@ int main(int argc, char *argv[])
         // something to be read() on it.
         // fds.data() gices poll access to a vector that contains all of the sockets that are being watched
         // fds.size() tells poll how many sockets are being watched
-        // -1 means wait indefinitely until something happens.
-        int n = poll(fds.data(), fds.size(), -1);
+        int n = poll(fds.data(), fds.size(), 1000);
 
         if (n < 0)
         {
@@ -752,6 +784,41 @@ int main(int argc, char *argv[])
         }
         else
         {
+            // Keepalive
+            auto now = std::chrono::steady_clock::now();
+
+            // Keepalive
+            for (auto const& entry : clients)
+            {
+                Client* client = entry.second;
+
+                // Make sure we only send a keepalive to a peer
+                if (client->name.empty())
+                {
+                    continue;
+                }
+
+                auto elapsed = now - client->lastKeepalive;
+
+                if (elapsed >= std::chrono::seconds(60))
+                {
+                    int count = 0;
+                    auto it = messages.find(client->name);
+                    if (it != messages.end())
+                    {
+                        count = it->second.size();
+                    }
+                    std::string message = "KEEPALIVE," + std::to_string(count);
+                    
+                    // Send KEEPALIVE to this peer
+                    if (sendMessage(client->sock, message))
+                    {
+                        client->lastKeepalive = std::chrono::steady_clock::now();
+                    }
+                }
+            }
+
+
             // Take a snapshot of the current fds/revents before processing
             // them below, since fds itself may be modified while we go
             // (new clients connecting, existing clients disconnecting).
