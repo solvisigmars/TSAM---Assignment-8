@@ -227,52 +227,65 @@ int connectToServer(const char* ip, int port)
 // Connect to the servers that we know about
 void connectToKnownServers(std::vector<struct pollfd>& fds)
 {
-  int connectionCount = 0;
+int connectionCount = clients.size();
 
-  for (const auto& [sock, client] : clients){
-    if (!client->name.empty())
-    {
-      connectionCount ++;
-    }
-  }
-
-  for(const auto& [groupId, server] : knownServers)
+  // Go through known servers twice
+  // On the first iteration we look at the g_servers to prioritise them
+  // Then we look at the I servers if there is enough space for them 
+  for (int pass = 0; pass < 2; pass++)
   {
-    bool connected = false;
-
-    // Skip our server
-    if (groupId == GROUP_ID){
-      continue;
-    }
-
-    // Check if we are connected to the server
-    // Servers that are connected are stored in the Client
-    for(const auto& [sock, client] : clients)
+    // Go through all known servers
+    for(const auto& [groupId, server] : knownServers)
     {
-      if (client->name == groupId ||(client->ip == server.ip && client->port == server.port))
+
+      bool isGroupServer = groupId.starts_with("G_");
+
+      // On the first iteration we skip the I servers
+      if (pass == 0 && !isGroupServer)
+        continue;
+
+      // Then on the second iteration we look at the rest of the servers.
+      if (pass == 1 && isGroupServer)
+        continue;
+
+      bool connected = false;
+
+      // Skip our server
+      if (groupId == GROUP_ID){
+        continue;
+      }
+
+      // Check if we are connected to the server
+      // Servers that are connected are stored in the Client
+      for(const auto& [sock, client] : clients)
       {
-        connected = true;
-        break;
+        
+        if (client->name == groupId ||(client->ip == server.ip && client->port == server.port))
+        {
+          connected = true;
+          break;
+        }
+        }
+        // Skip server if it is connected
+        if(connected)
+        {
+          continue;
+        }
+
+        // If we have reached 5 connected servers we stop connecting to more
+        if (connectionCount >= 5){
+          return;
+        }
+
+        // Extract the ip from the server and port 
+        // Use that to connect to the server
+        if (connectToPeer(server.ip, server.port, fds))
+        {
+          connectionCount ++;
       }
     }
-    // Skip server if it is connected
-    if(connected)
-    {
-      continue;
-    }
-
-    // If we have reached 5 connected servers we stop connecting to more
-    if (connectionCount >= 5){
-      break;
-    }
-
-    // Extract the ip from the server and port 
-    // Use that to connect to the server
-    if (connectToPeer(server.ip, server.port, fds))
-    {
-      connectionCount ++;
-    }
   }
+  
 }
 
 // Close a client's connection, and remove it from the list of file
@@ -648,6 +661,12 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         std::getline(serverStream, groupId, ',');
         std::getline(serverStream, ip, ',');
         std::getline(serverStream, port, ',');
+
+        // Ignore invalid server information
+        if (groupId.empty() || ip.empty() || ip == "0.0.0.0" || port.empty())
+          {
+              continue;
+          }
 
         knownServers[groupId] = {ip, std::stoi(port)}; // Store the server in the knownServer map
         std::cout << groupId << " " << ip << " " << port << std::endl;
