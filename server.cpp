@@ -96,9 +96,8 @@ struct Server
 // Maps each server's group id to its IP address and port
 std::map<std::string, Server> knownServers;
 
-// Open socket for specified port.
-//
-// Returns -1 if unable to create the socket for any reason.
+int listenPort = 0;
+std::string serverIp;
 
 // Function declaration
 void logMessage(const std::string &message);
@@ -106,6 +105,9 @@ int connectToServer(const char* ip, int port);
 bool sendMessage(int clientSocket, const std::string& response);
 void closeClient(int clientSocket, std::vector<struct pollfd> *fds);
 
+// Open socket for specified port.
+//
+// Returns -1 if unable to create the socket for any reason.
 int open_socket(int portno)
 {
     struct sockaddr_in sk_addr; // address settings for bind()
@@ -167,6 +169,14 @@ bool connectToPeer(const std::string& ip, int port,
   {
     return false;
   }
+
+  struct sockaddr_in localAddr{};
+  socklen_t addrLen = sizeof(localAddr);
+  if (getsockname(peerSock, (struct sockaddr*)&localAddr, &addrLen) == 0)
+{
+    serverIp = inet_ntoa(localAddr.sin_addr);
+}
+
 
   std::string message;
   // Add peer spcket to the list of fds being polled
@@ -415,12 +425,11 @@ void logMessage(const std::string &message)
 std::string serversMessage()
 {
   // Set my server details at the front of the message 
-  std::string ipAddress = "130.208.246.98";
-  int port = 4045;
   std::string message = "SERVERS,";
-  message += std::string(GROUP_ID) + "," + ipAddress + "," + std::to_string(port) + ";";
+  message += std::string(GROUP_ID) + "," + serverIp + "," + std::to_string(listenPort) + ";";
 
   // Loop through the clients
+  // Add their server details to the message
   for (const auto& [sock, client] : clients)
   {
     if (client->name.empty())
@@ -741,8 +750,9 @@ int main(int argc, char *argv[])
     }
 
     // Setup socket for server to listen to
-    listenSock = open_socket(atoi(argv[1]));
-    printf("Listening on port: %d\n", atoi(argv[1]));
+    listenPort = atoi(argv[1]);
+    listenSock = open_socket(listenPort);
+    printf("Listening on port: %d\n", listenPort);
 
     if (listen(listenSock, BACKLOG) < 0)
     {
