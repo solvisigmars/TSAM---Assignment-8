@@ -766,12 +766,15 @@ int main(int argc, char *argv[])
     }
 
     finished = false;
-
+    
+    auto lastReconnect = std::chrono::steady_clock::now();
+    
     while (!finished)
     {
         memset(buffer, 0, sizeof(buffer));
 
-        // Wait (indefinitely) until at least one of our sockets has
+        // Wait for 1 second for a socket to do something
+        // 
         // something to be read() on it.
         // fds.data() gices poll access to a vector that contains all of the sockets that are being watched
         // fds.size() tells poll how many sockets are being watched
@@ -786,6 +789,16 @@ int main(int argc, char *argv[])
         {
             // Keepalive
             auto now = std::chrono::steady_clock::now();
+
+            // Automatic reconnection
+            // Checks every 30 seconds if there is a available slot to conenct to a server
+            if (now - lastReconnect >= std::chrono::seconds(30))
+            {
+              // Tries to connect to a known server every 30 seconds
+              std::cout << "Checking for new connections..." << std::endl;
+              connectToKnownServers(fds);
+              lastReconnect = now;
+            }
 
             // Keepalive
             for (auto const& entry : clients)
