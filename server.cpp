@@ -469,7 +469,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     // If the command is STATUSREQ the user gets sent back a response with a list of every users that has at leas one message
     if (command == "STATUSREQ")
     {
-        std::string response;
+        std::string response = "STATUSRESP,";
         // Log the command 
         log_event_bytes("RECV", c->ip.c_str(), c->port, NULL,
                     command.data(), command.size());
@@ -483,6 +483,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         {
             int counter = 0;
             int total_size = messages.size();
+
             // Loop through the users who have stored messages
             for (auto const &user : messages)
             {
