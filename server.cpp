@@ -690,6 +690,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
       }
       // All discovered servers have been stored so we try to connect to them
       connectToKnownServers(fds);
+      // Send STATUSSREQ command after getting known servers
+      sendMessage(clientSocket, "STATUSREQ");
     }
 
     else if (command.starts_with("KEEPALIVE,"))
