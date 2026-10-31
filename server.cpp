@@ -498,14 +498,14 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         size_t comma = command.find(",", 8);
 
         if (comma == std::string::npos)
-    {
-        // Log the invalid SENDMSG format
-        log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                        command.data(), command.size());
+        {
+            // Log the invalid SENDMSG format
+            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
+                            command.data(), command.size());
 
-        sendMessage(clientSocket, "Invalid SENDMSG format");
-        return;
-    }
+            sendMessage(clientSocket, "Invalid SENDMSG format");
+            return;
+        }
         
         std::string from = command.substr(8, comma - 8); // Find the from person. It starts at index 8 and stops at the next comma.
 
@@ -520,10 +520,22 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
+
+        size_t thirdComma = command.find(",", secondComma + 1);
+
+        if (thirdComma == std::string::npos)
+        {
+            // Invalid SENDMSG: missing timestamp or message separator
+            return;
+        }
+
+        std::string timestampText = command.substr(secondComma + 1, thirdComma - secondComma - 1);
+
+
         std::string to = command.substr(comma + 1, secondComma - (comma + 1));
 
         // Find the message
-        std::string message = command.substr(secondComma + 1);
+        std::string message = command.substr(thirdComma + 1);
 
         // Check if none of the fields are empty
         if (from.empty() || to.empty() || message.empty())
@@ -533,6 +545,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
+
+
 
         newMessage.from = from;
         newMessage.message = message;
@@ -610,6 +624,49 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             {
                 messages.erase(foundUser); // Remove the user from the map
             }
+        }
+    }
+
+
+    else if (command.starts_with("GETMSGS,"))
+    {
+        // Extract the group name
+        std::string group = command.substr(8);
+
+        // Check that the group name isn't empty
+        if (group.empty())
+        {
+            return;
+        }
+
+        // Find messages stored for this group
+        auto it = messages.find(group);
+
+        if (it == messages.end())
+        {
+            
+            return;
+        }
+
+        // Go through the messages for this group
+        auto& storedMessages = it->second;
+
+        while (!storedMessages.empty())
+        {
+            Message& msg = storedMessages.front();
+
+            // Construct the server-to-server message
+            std::string response = "SENDMSG," + msg.from + "," + group + "," + msg.message;
+
+            // Send the message
+            if (!sendMessage(clientSocket, response))
+            {
+                // Sending failed, so keep this message stored
+                break;
+            }
+
+            // 6. Remove the message only after successful sending
+            storedMessages.erase(storedMessages.begin());
         }
     }
     else if(command.starts_with("HELO,"))
