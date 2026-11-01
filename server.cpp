@@ -503,6 +503,79 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         }
         sendMessage(clientSocket, response);
     }
+
+    else if(command.starts_with("STATUSRESP,"))
+    {
+      std::string response = command.substr(11);
+
+      // Log that we received STATUSRESP
+      log_event_bytes("RECV", c->ip.c_str(), c->port, NULL, command.data(), command.size());
+
+      if (response == "EMPTY")
+        return;
+
+      std::stringstream ss(response);
+      std::string entry;
+
+      while (std::getline(ss, entry, ','))
+      {
+        size_t colonPos = entry.find(':');
+
+        // If there is no colon we skip that part of the message
+        if (colonPos == std::string::npos)
+          continue;
+        
+        // Extract the server name and number of messages waiting for that server
+        std::string serverName = entry.substr(0, colonPos);
+        std::string count = entry.substr(colonPos + 1);
+
+        // Check if we are connected to the server. We want a server that we are connected to, to get its message
+        bool connected = false;
+
+        // Go through the servers that we are connected and check if they are the same as the server we are checking on
+        // If so we get the message for that server
+        for (const auto& [sock, client] : clients)
+        {
+          if (client->name == serverName)
+          {
+            connected = true;
+            break;
+          }
+        }
+
+        // Retrive messages for ourselves or servers that we can relay to
+        if (serverName == GROUP_ID || connected)
+        {
+          int messageCount = 0;
+          try
+          {
+            size_t pos = 0;
+            // Convert the message count from string to int
+            messageCount = std::stoi(count, &pos);
+
+            // Skip invalid counts or servers with no messages
+            if (pos != count.size() || messageCount <= 0)
+            {
+             continue;
+            }
+          }
+          catch(const std::exception& e)
+          {
+            continue;
+          }
+          // Create GETMSG
+          std::string message = "GETMSG,";
+          message += serverName;
+          // Log what message is waiting for the server and how many
+          log_note("Message wating for %s: %d", serverName.c_str(), messageCount);
+          // Send GETMSG based on how many messages we are wating for 
+          for (int i = 0; i < messageCount; i ++)
+          {
+            sendMessage(clientSocket, message);
+          }
+        }
+      }
+    }
     // We have to process the message that was sent.
     // 1. Extract the sender's username
     // 2. Extract the recipent's username
