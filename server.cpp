@@ -387,8 +387,7 @@ bool sendMessage(int clientSocket, const std::string &response)
     {
         Client* c = it->second;
 
-        log_event_bytes("SEND", c->ip.c_str(), c->port, NULL,
-                        response.data(), response.size());
+        log_event_bytes("SEND", c->ip.c_str(), c->port, NULL, response.data(), response.size());
     }
     return true;
 }
@@ -501,6 +500,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     // 4. Store the message in the recipent's message queue
     else if (command.starts_with("SENDMSG,"))
     {
+        log_event_bytes("RECV", c->ip.c_str(), c->port, NULL, command.data(), command.size());
+
         Message newMessage;
         // Find the from
         size_t comma = command.find(",", 8);
@@ -508,60 +509,73 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         if (comma == std::string::npos)
         {
             // Log the invalid SENDMSG format
-            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                            command.data(), command.size());
+            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
 
-            sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
         
         std::string from = command.substr(8, comma - 8); // Find the from person. It starts at index 8 and stops at the next comma.
+
 
         // Find the second comma
         size_t secondComma = command.find(",", comma + 1);
 
         if (secondComma == std::string::npos)
         {
-            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                            command.data(), command.size());
+            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
 
-            sendMessage(clientSocket, "Invalid SENDMSG format");
             return;
         }
-
-        size_t thirdComma = command.find(",", secondComma + 1);
-
-        if (thirdComma == std::string::npos)
-        {
-            // Invalid SENDMSG: missing timestamp or message separator
-            return;
-        }
-
-        std::string timestampText = command.substr(secondComma + 1, thirdComma - secondComma - 1);
-
-        bool validTimestamp = !timestampText.empty() && std::all_of(timestampText.begin(), timestampText.end(), [](unsigned char c) 
-        {
-            return std::isdigit(c);
-        });
-
-        if (!validTimestamp)
-        {
-            // Invalid timestamp, so don't store the message
-            return;
-        }
-
 
         std::string to = command.substr(comma + 1, secondComma - (comma + 1));
 
-        // Find the message
-        std::string message = command.substr(thirdComma + 1);
+        std::string message;
+        std::string timestampText;
 
+        log_note("SENDMSG connection name: '%s'", c->name.c_str());
+
+        if (c->name.empty())
+        {
+            // Message from our own client
+            message = command.substr(secondComma + 1);
+
+            // Create the timestamp
+            timestampText = std::to_string(std::time(nullptr));
+        }
+
+        else
+        {
+            size_t thirdComma = command.find(",", secondComma + 1);
+
+            if (thirdComma == std::string::npos)
+            {
+                log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
+                // Invalid SENDMSG: missing timestamp or message separator
+                return;
+            }
+
+            timestampText = command.substr(secondComma + 1, thirdComma - secondComma - 1);
+
+            bool validTimestamp = !timestampText.empty() && std::all_of(timestampText.begin(), timestampText.end(), [](unsigned char c) 
+            {
+                return std::isdigit(c);
+            });
+
+            if (!validTimestamp)
+            {
+                log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
+                // Invalid timestamp, so don't store the message
+                return;
+            }
+            // Find the message
+            message = command.substr(thirdComma + 1);
+
+        }
+        
         // Check if none of the fields are empty
         if (from.empty() || to.empty() || message.empty())
         {
-            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                        command.data(), command.size());
-            sendMessage(clientSocket, "Invalid SENDMSG format");
+            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
             return;
         }
 
@@ -591,8 +605,6 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             log_note("Stored a message for group %s", to.c_str());
         }
         
-        log_event_bytes("RECV", c->ip.c_str(), c->port, NULL,
-                    command.data(), command.size());
 
     }
 
@@ -608,19 +620,21 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         // Check if username is empty
         std::string user = command.substr(7);
 
+        if (user != GROUP_ID)
+        {
+            log_note("Rejected GETMSG for group %s", user.c_str());
+            return;
+        }
+
         // Check if the username is empty
         if (user.empty())
         {
-            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                            command.data(), command.size());
-
-            sendMessage(clientSocket, "Invalid GETMSG format");
+            log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
             return;
         }
 
         // Log valid command
-        log_event_bytes("RECV", c->ip.c_str(), c->port, NULL,
-                        command.data(), command.size());
+        log_event_bytes("RECV", c->ip.c_str(), c->port, NULL, command.data(), command.size());
 
         std::string response;
 
@@ -631,8 +645,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         // If the user is not found it send back that the user was not found
         if (foundUser == messages.end())
         {
-            response += "User not found";
-            sendMessage(clientSocket, response);
+            log_note("No messages found for %s", user.c_str());
+            return;
         }
 
 
@@ -676,12 +690,17 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             return;
         }
 
+        if (group != c->name)
+        {
+            log_note("Rejected GETMSGS for group %s", group.c_str());
+            return;
+        }
+
         // Find messages stored for this group
         auto it = messages.find(group);
 
         if (it == messages.end())
         {
-            
             return;
         }
 
@@ -693,8 +712,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             Message& msg = storedMessages.front();
 
             // Construct the server-to-server message
-            std::string response = "SENDMSG," + msg.from + "," + group +  msg.timestamp +"," + msg.message;
-
+            std::string response = "SENDMSG," + msg.from + "," + group + "," + msg.timestamp + "," + msg.message;
             // Send the message
             if (!sendMessage(clientSocket, response))
             {
@@ -702,9 +720,15 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
                 break;
             }
 
-            // 6. Remove the message only after successful sending
+            // Remove the message only after successful sending
             storedMessages.erase(storedMessages.begin());
         }
+
+        if (storedMessages.empty())
+        {
+            messages.erase(it);
+        }
+
     }
     else if(command.starts_with("HELO,"))
     {
@@ -715,16 +739,14 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
       if (groupId.empty())
       {
         // Log the invalid command as DROP
-        log_event_bytes("DROP", c->ip.c_str(), c->port, NULL,
-                            command.data(), command.size());
+        log_event_bytes("DROP", c->ip.c_str(), c->port, NULL, command.data(), command.size());
         return;
       }
       // Save the other server's group ID in its Client object
       c->name = groupId;
 
       // Log the successfully received HELO command
-      log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.c_str(),
-                command.data(), command.size());
+      log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.c_str(), command.data(), command.size());
 
       std::string message = serversMessage();
       sendMessage(clientSocket, message);
@@ -784,9 +806,12 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             {
                 return;
             }
+            log_event_bytes("RECV", c->ip.c_str(), c->port, c->name.empty() ? NULL : c->name.c_str(), command.data(), command.size());
 
-            // count now tells us how many messages
-            // the other server says it has waiting for us.
+            if (count > 0)
+            {
+                sendMessage(clientSocket, "GETMSGS," + std::string(GROUP_ID));
+            }
         }
         catch (const std::exception& e)
         {
