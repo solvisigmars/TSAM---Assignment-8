@@ -96,6 +96,10 @@ struct Server
 // Maps each server's group id to its IP address and port
 std::map<std::string, Server> knownServers;
 
+// Store the time of the last connection attempt for each server
+std::map<std::string, std::chrono::steady_clock::time_point> lastConnectionAttempt;
+
+
 int listenPort = 0;
 std::string serverIp;
 
@@ -297,6 +301,18 @@ int connectionCount = clients.size();
         // If we have reached 5 connected servers we stop connecting to more
         if (connectionCount >= 5){
           return;
+        }
+
+        // Get the current time
+        auto now = std::chrono::steady_clock::now();
+
+        // Check when we last tried to connect to this server
+        auto it = lastConnectionAttempt.find(groupId);
+
+        // Skip the server if we have tried to connect to it less than 30 seconds ago 
+        if(it != lastConnectionAttempt.end() && now - it->second < std::chrono::seconds(30))
+        {
+          continue;
         }
 
         // Extract the ip from the server and port 
