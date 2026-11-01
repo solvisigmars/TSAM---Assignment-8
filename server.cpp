@@ -205,11 +205,6 @@ bool connectToPeer(const std::string& ip, int port,
     return false;
   }
 
-  if (port == 5001)
-  {
-    sendMessage(peerSock, "TEST_ME");
-  }
-
   return true;
 }
 
