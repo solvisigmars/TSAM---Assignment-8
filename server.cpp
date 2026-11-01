@@ -201,6 +201,11 @@ bool connectToPeer(const std::string& ip, int port,
     return false;
   }
 
+  if (port == 5001)
+  {
+    sendMessage(peerSock, "TEST_ME");
+  }
+
   return true;
 }
 
@@ -544,7 +549,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         }
 
         // Retrive messages for ourselves or servers that we can relay to
-        if (serverName == GROUP_ID || connected)
+        // Make sure that the destination server is not the same as we received the STATUSRESP from
+        if (serverName != c->name && (serverName == GROUP_ID || connected))
         {
           int messageCount = 0;
           try
