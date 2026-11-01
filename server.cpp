@@ -315,6 +315,9 @@ int connectionCount = clients.size();
           continue;
         }
 
+        // Save the time of this connection attempt
+        lastConnectionAttempt[groupId] = now;
+
         // Extract the ip from the server and port 
         // Use that to connect to the server
         if (connectToPeer(server.ip, server.port, fds))
