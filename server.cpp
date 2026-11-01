@@ -77,6 +77,7 @@ struct Message
 {
     std::string from;
     std::string message;
+    std::string timestamp;
 };
 // Maps the users to a vector containing all of their messages.
 std::map<std::string, std::vector<Message>> messages;
@@ -531,6 +532,17 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
 
         std::string timestampText = command.substr(secondComma + 1, thirdComma - secondComma - 1);
 
+        bool validTimestamp = !timestampText.empty() && std::all_of(timestampText.begin(), timestampText.end(), [](unsigned char c) 
+        {
+            return std::isdigit(c);
+        });
+
+        if (!validTimestamp)
+        {
+            // Invalid timestamp, so don't store the message
+            return;
+        }
+
 
         std::string to = command.substr(comma + 1, secondComma - (comma + 1));
 
@@ -550,13 +562,31 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
 
         newMessage.from = from;
         newMessage.message = message;
+        newMessage.timestamp = timestampText;
 
+        // Store the message once
         messages[to].push_back(newMessage);
+
+        
+        // Decide what to do with it
+        if (to == GROUP_ID)
+        {
+            // The message is addressed to our own group.
+            // Keep it stored until our client retrieves it.
+
+            log_note("Received a message for our own group");
+        }
+        else
+        {
+            // The message is addressed to another group.
+            // Keep it stored until it can be forwarded.
+
+            log_note("Stored a message for group %s", to.c_str());
+        }
+        
         log_event_bytes("RECV", c->ip.c_str(), c->port, NULL,
                     command.data(), command.size());
 
-        std::string response = "Message received";
-        sendMessage(clientSocket, response);
     }
 
     // Extract the first message in the recipent's queue
@@ -656,7 +686,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             Message& msg = storedMessages.front();
 
             // Construct the server-to-server message
-            std::string response = "SENDMSG," + msg.from + "," + group + "," + msg.message;
+            std::string response = "SENDMSG," + msg.from + "," + group +  msg.timestamp +"," + msg.message;
 
             // Send the message
             if (!sendMessage(clientSocket, response))
