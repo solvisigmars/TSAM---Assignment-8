@@ -720,7 +720,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     else if (command.starts_with("GETMSGS,"))
     {
         // Check if username is empty
-        std::string user = command.substr(7);
+        std::string user = command.substr(8);
 
         if (user != GROUP_ID)
         {
