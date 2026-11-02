@@ -717,10 +717,10 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     // 4. Send it to the client
     // 5. Remove the message from the queue
     // 6. If the user has no more messages we delete the user
-    else if (command.starts_with("GETMSGS,"))
+    else if (command.starts_with("GETMSG,"))
     {
         // Check if username is empty
-        std::string user = command.substr(8);
+        std::string user = command.substr(7);
 
         if (user != GROUP_ID)
         {
