@@ -97,9 +97,12 @@ struct Server
 // Maps each server's group id to its IP address and port
 std::map<std::string, Server> knownServers;
 
-// Open socket for specified port.
-//
-// Returns -1 if unable to create the socket for any reason.
+// Store the time of the last connection attempt for each server
+std::map<std::string, std::chrono::steady_clock::time_point> lastConnectionAttempt;
+
+
+int listenPort = 0;
+std::string serverIp;
 
 // Function declaration
 void logMessage(const std::string &message);
@@ -107,6 +110,9 @@ int connectToServer(const char* ip, int port);
 bool sendMessage(int clientSocket, const std::string& response);
 void closeClient(int clientSocket, std::vector<struct pollfd> *fds);
 
+// Open socket for specified port.
+//
+// Returns -1 if unable to create the socket for any reason.
 int open_socket(int portno)
 {
     struct sockaddr_in sk_addr; // address settings for bind()
@@ -168,6 +174,14 @@ bool connectToPeer(const std::string& ip, int port,
   {
     return false;
   }
+
+  struct sockaddr_in localAddr{};
+  socklen_t addrLen = sizeof(localAddr);
+  if (getsockname(peerSock, (struct sockaddr*)&localAddr, &addrLen) == 0)
+{
+    serverIp = inet_ntoa(localAddr.sin_addr);
+}
+
 
   std::string message;
   // Add peer spcket to the list of fds being polled
@@ -284,6 +298,21 @@ int connectionCount = clients.size();
         if (connectionCount >= 5){
           return;
         }
+
+        // Get the current time
+        auto now = std::chrono::steady_clock::now();
+
+        // Check when we last tried to connect to this server
+        auto it = lastConnectionAttempt.find(groupId);
+
+        // Skip the server if we have tried to connect to it less than 30 seconds ago 
+        if(it != lastConnectionAttempt.end() && now - it->second < std::chrono::seconds(30))
+        {
+          continue;
+        }
+
+        // Save the time of this connection attempt
+        lastConnectionAttempt[groupId] = now;
 
         // Extract the ip from the server and port 
         // Use that to connect to the server
@@ -415,12 +444,11 @@ void logMessage(const std::string &message)
 std::string serversMessage()
 {
   // Set my server details at the front of the message 
-  std::string ipAddress = "130.208.246.98";
-  int port = 4045;
   std::string message = "SERVERS,";
-  message += std::string(GROUP_ID) + "," + ipAddress + "," + std::to_string(port) + ";";
+  message += std::string(GROUP_ID) + "," + serverIp + "," + std::to_string(listenPort) + ";";
 
   // Loop through the clients
+  // Add their server details to the message
   for (const auto& [sock, client] : clients)
   {
     if (client->name.empty())
@@ -460,7 +488,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     // If the command is STATUSREQ the user gets sent back a response with a list of every users that has at leas one message
     if (command == "STATUSREQ")
     {
-        std::string response;
+        std::string response = "STATUSRESP,";
         // Log the command 
         log_event_bytes("RECV", c->ip.c_str(), c->port, NULL,
                     command.data(), command.size());
@@ -474,6 +502,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
         {
             int counter = 0;
             int total_size = messages.size();
+
             // Loop through the users who have stored messages
             for (auto const &user : messages)
             {
@@ -492,6 +521,80 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             }
         }
         sendMessage(clientSocket, response);
+    }
+
+    else if(command.starts_with("STATUSRESP,"))
+    {
+      std::string response = command.substr(11);
+
+      // Log that we received STATUSRESP
+      log_event_bytes("RECV", c->ip.c_str(), c->port, NULL, command.data(), command.size());
+
+      if (response == "EMPTY")
+        return;
+
+      std::stringstream ss(response);
+      std::string entry;
+
+      while (std::getline(ss, entry, ','))
+      {
+        size_t colonPos = entry.find(':');
+
+        // If there is no colon we skip that part of the message
+        if (colonPos == std::string::npos)
+          continue;
+        
+        // Extract the server name and number of messages waiting for that server
+        std::string serverName = entry.substr(0, colonPos);
+        std::string count = entry.substr(colonPos + 1);
+
+        // Check if we are connected to the server. We want a server that we are connected to, to get its message
+        bool connected = false;
+
+        // Go through the servers that we are connected and check if they are the same as the server we are checking on
+        // If so we get the message for that server
+        for (const auto& [sock, client] : clients)
+        {
+          if (client->name == serverName)
+          {
+            connected = true;
+            break;
+          }
+        }
+
+        // Retrive messages for ourselves or servers that we can relay to
+        // Make sure that the destination server is not the same as we received the STATUSRESP from
+        if (serverName != c->name && (serverName == GROUP_ID || connected))
+        {
+          int messageCount = 0;
+          try
+          {
+            size_t pos = 0;
+            // Convert the message count from string to int
+            messageCount = std::stoi(count, &pos);
+
+            // Skip invalid counts or servers with no messages
+            if (pos != count.size() || messageCount <= 0)
+            {
+             continue;
+            }
+          }
+          catch(const std::exception& e)
+          {
+            continue;
+          }
+          // Create GETMSG
+          std::string message = "GETMSG,";
+          message += serverName;
+          // Log what message is waiting for the server and how many
+          log_note("Message wating for %s: %d", serverName.c_str(), messageCount);
+          // Send GETMSG based on how many messages we are wating for 
+          for (int i = 0; i < messageCount; i ++)
+          {
+            sendMessage(clientSocket, message);
+          }
+        }
+      }
     }
     // We have to process the message that was sent.
     // 1. Extract the sender's username
@@ -789,6 +892,8 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
       }
       // All discovered servers have been stored so we try to connect to them
       connectToKnownServers(fds);
+      // Send STATUSSREQ command after getting known servers
+      sendMessage(clientSocket, "STATUSREQ");
     }
 
     else if (command.starts_with("KEEPALIVE,"))
@@ -853,8 +958,9 @@ int main(int argc, char *argv[])
     }
 
     // Setup socket for server to listen to
-    listenSock = open_socket(atoi(argv[1]));
-    printf("Listening on port: %d\n", atoi(argv[1]));
+    listenPort = atoi(argv[1]);
+    listenSock = open_socket(listenPort);
+    printf("Listening on port: %d\n", listenPort);
 
     if (listen(listenSock, BACKLOG) < 0)
     {
@@ -878,12 +984,15 @@ int main(int argc, char *argv[])
     }
 
     finished = false;
-
+    
+    auto lastReconnect = std::chrono::steady_clock::now();
+    
     while (!finished)
     {
         memset(buffer, 0, sizeof(buffer));
 
-        // Wait (indefinitely) until at least one of our sockets has
+        // Wait for 1 second for a socket to do something
+        // 
         // something to be read() on it.
         // fds.data() gices poll access to a vector that contains all of the sockets that are being watched
         // fds.size() tells poll how many sockets are being watched
@@ -898,6 +1007,16 @@ int main(int argc, char *argv[])
         {
             // Keepalive
             auto now = std::chrono::steady_clock::now();
+
+            // Automatic reconnection
+            // Checks every 30 seconds if there is a available slot to conenct to a server
+            if (now - lastReconnect >= std::chrono::seconds(30))
+            {
+              // Tries to connect to a known server every 30 seconds
+              std::cout << "Checking for new connections..." << std::endl;
+              connectToKnownServers(fds);
+              lastReconnect = now;
+            }
 
             // Keepalive
             for (auto const& entry : clients)
