@@ -584,15 +584,14 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             continue;
           }
           // Create GETMSG
-          std::string message = "GETMSG,";
+          std::string message = "GETMSGS,";
           message += serverName;
           // Log what message is waiting for the server and how many
           log_note("Message wating for %s: %d", serverName.c_str(), messageCount);
           // Send GETMSG based on how many messages we are wating for 
-          for (int i = 0; i < messageCount; i ++)
-          {
-            sendMessage(clientSocket, message);
-          }
+          
+          
+           sendMessage(clientSocket, message);  
         }
       }
     }
@@ -718,7 +717,7 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
     // 4. Send it to the client
     // 5. Remove the message from the queue
     // 6. If the user has no more messages we delete the user
-    else if (command.starts_with("GETMSG,"))
+    else if (command.starts_with("GETMSGS,"))
     {
         // Check if username is empty
         std::string user = command.substr(7);
