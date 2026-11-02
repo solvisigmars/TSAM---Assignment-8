@@ -798,6 +798,10 @@ void clientCommand(int clientSocket, const std::string &command, std::vector<str
             return;
         }
 
+        log_event_bytes("RECV", c->ip.c_str(), c->port,
+                c->name.c_str(), command.data(), command.size());
+
+
         // Find messages stored for this group
         auto it = messages.find(group);
 
